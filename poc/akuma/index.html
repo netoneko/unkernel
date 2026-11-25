@@ -9,6 +9,7 @@
 <pre id="err"></pre>
 <script type="module">
 // With no query the page runs the newest test: nettest.elf on rootfs.tar with the fake network. Parameters:
+// ?sh=CMDS  run shell commands (busybox sh -c) on the root file system: ?sh=ls /bin; apk --version; wget -O- http://example.com
 // ?elf=NAME  the guest program (default nettest.elf)   ?arg=X  an argument (repeatable)
 // ?rootfs=NAME  a ustar archive served as the guest's boot file system (default rootfs.tar; ?rootfs=none for none)
 // ?net=test (default)  a fake world: example.test, an HTTP server on 10.0.2.2:80   ?net=none  no network
@@ -16,7 +17,9 @@
 // ?trace     trace syscalls and faults on the browser console
 import { run, wsNet } from "./host.mjs";
 const q = new URLSearchParams(location.search);
-const elfName = q.get("elf") ?? "nettest.elf";
+// ?sh=COMMANDS runs them with busybox sh -c (apk, wget and the rootfs tools are in /bin)
+const elfName = q.has("sh") ? "busybox.elf" : q.get("elf") ?? "nettest.elf";
+const args = q.has("sh") ? ["sh", "-c", q.get("sh")] : q.getAll("arg");
 const rootfsName = q.get("rootfs") ?? "rootfs.tar";
 const netArg = q.get("net") ?? "test";
 const netSpec = netArg === "ws" ? `ws://${location.host}/tcp` : netArg; // ?net=ws: serve.py's relay on this origin
@@ -37,7 +40,7 @@ try {
   let net = null;
   if (netSpec === "test") net = (await import("./testnet.mjs")).testNet();
   else if (netSpec !== "none") net = wsNet({ proxy: netSpec });
-  status = await run({ net, wasm, elf: new Uint8Array(elf), rootfs: rootfs && new Uint8Array(rootfs), argv: [elfName, ...q.getAll("arg")], write: sink, trace: q.has("trace") });
+  status = await run({ net, wasm, elf: new Uint8Array(elf), rootfs: rootfs && new Uint8Array(rootfs), argv: [q.has("sh") ? "/bin/busybox" : elfName, ...args], write: sink, trace: q.has("trace") });
 } catch (e) {
   err.textContent += `host error: ${(e && e.stack) || e}\n`;
   status = "host-error";

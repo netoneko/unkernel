@@ -31,7 +31,7 @@ build() {
 	(cd "$root" && "$zig" build -Doptimize=ReleaseFast --prefix "$out/zig")
 	# The Akuma kernel for wasm64: nightly + build-std, pinned by the akuma checkout's rust-toolchain.toml.
 	(cd "$akuma" && KWEMU_LIB_DIR="$out/zig/lib" CARGO_TARGET_DIR="$out/cargo" \
-		cargo rustc --release -Zbuild-std=core --target wasm64-unknown-unknown -p akuma-kernel-wasm --crate-type cdylib)
+		cargo rustc --release -Zbuild-std=core,alloc --target wasm64-unknown-unknown -p akuma-kernel-wasm --crate-type cdylib)
 	local site="$out/site"
 	rm -rf "$site"
 	mkdir -p "$site"
@@ -46,6 +46,42 @@ build() {
 	# The root file system: poc/akuma/rootfs plus the programs built here (/bin/echoargs).
 	rm -rf "$out/rootfs-stage" && cp -r "$here/rootfs" "$out/rootfs-stage"
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$out/rootfs-stage/bin/echoargs" "$here/guest/echoargs.c"
+	# Dynamic linking: Alpine's own ld-musl (the interpreter), two shared libraries, and a program that needs them.
+	mkdir -p "$out/dl" "$out/rootfs-stage/lib"
+	if [ ! -f "$out/dl/ld-musl-aarch64.so.1" ]; then
+		curl -sfL "https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64/musl-1.2.6-r3.apk" -o "$out/dl/musl.apk"
+		mkdir -p "$out/dl/musl" && tar -xzi -f "$out/dl/musl.apk" -C "$out/dl/musl" 2>/dev/null
+		cp "$out/dl/musl/lib/ld-musl-aarch64.so.1" "$out/dl/"
+	fi
+	# Alpine's static busybox (a shell and ~100 tools) and static apk, so a page can script `sh -c "apk add ...; ..."`.
+	local base=https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64
+	if [ ! -f "$out/dl/busybox.static" ] || [ ! -f "$out/dl/apk.static" ]; then
+		local index bb ap
+		index=$(curl -sSfL "$base/")
+		bb=$(grep -o 'busybox-static-[0-9][^"]*\.apk' <<<"$index" | head -1)
+		ap=$(grep -o 'apk-tools-static-[0-9][^"]*\.apk' <<<"$index" | head -1)
+		curl -sSfL -o "$out/dl/busybox-static.apk" "$base/$bb"
+		curl -sSfL -o "$out/dl/apk-tools-static.apk" "$base/$ap"
+		mkdir -p "$out/dl/bb" "$out/dl/ap"
+		tar -xzi -f "$out/dl/busybox-static.apk" -C "$out/dl/bb" 2>/dev/null
+		tar -xzi -f "$out/dl/apk-tools-static.apk" -C "$out/dl/ap" 2>/dev/null
+		cp "$out/dl/bb/bin/busybox.static" "$out/dl/busybox.static"
+		cp "$out/dl/ap/sbin/apk.static" "$out/dl/apk.static"
+	fi
+	cp "$out/dl/busybox.static" "$out/rootfs-stage/bin/busybox"
+	cp "$out/dl/apk.static" "$out/rootfs-stage/bin/apk"
+	cp "$out/dl/busybox.static" "$site/busybox.elf"
+	for t in sh ash ls cat cp mv rm mkdir rmdir echo grep egrep sed awk head tail wc sort uniq tr cut date sleep ps kill env true false test '[' expr uname id pwd touch chmod ln df du find xargs tar gzip gunzip zcat wget nc nslookup hexdump od diff basename dirname tee which printf stat readlink realpath vi less more tail yes seq free uptime whoami hostname time timeout; do
+		ln -sf busybox "$out/rootfs-stage/bin/$t"
+	done
+	mkdir -p "$out/rootfs-stage/etc/apk" "$out/rootfs-stage/tmp" "$out/rootfs-stage/root" "$out/rootfs-stage/usr/bin" "$out/rootfs-stage/usr/lib" "$out/rootfs-stage/var"
+	echo "http://dl-cdn.alpinelinux.org/alpine/latest-stable/main" >"$out/rootfs-stage/etc/apk/repositories"
+	echo aarch64 >"$out/rootfs-stage/etc/apk/arch"
+	cp "$out/dl/ld-musl-aarch64.so.1" "$out/rootfs-stage/lib/"
+	ln -sf ld-musl-aarch64.so.1 "$out/rootfs-stage/lib/libc.musl-aarch64.so.1"
+	"$zig" cc -target aarch64-linux-musl -O2 -shared -fPIC -Wl,-soname,libfoo.so -o "$out/rootfs-stage/lib/libfoo.so" "$here/guest/libfoo.c"
+	"$zig" cc -target aarch64-linux-musl -O2 -shared -fPIC -Wl,-soname,libbar.so -o "$out/rootfs-stage/lib/libbar.so" "$here/guest/libbar.c"
+	"$zig" cc -target aarch64-linux-musl -O2 -o "$site/dyntest.elf" "$here/guest/dyntest.c" -L"$out/rootfs-stage/lib" -lfoo
 	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$site/rootfs.tar" -C "$out/rootfs-stage" .
 	# Akuma's own userspace (static aarch64-unknown-none ELFs on libakuma), when the checkout has built them.
 	local u="$akuma/userspace/target/aarch64-unknown-none/release"
@@ -69,6 +105,7 @@ cases=(
 	"fstest.elf 7 fstest\\ ok"
 	"pipetest.elf 7 pipetest\\ ok"
 	"nettest.elf 7 nettest\\ ok"
+	"dyntest.elf 7 dyntest\\ ok"
 )
 
 test_all() {
