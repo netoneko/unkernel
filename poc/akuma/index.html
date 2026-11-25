@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<meta charset="utf-8">
+<title>akuma on kwemu</title>
+<style>body{font:14px monospace;background:#111;color:#ddd;margin:1em}pre{white-space:pre-wrap}#err{color:#e88}</style>
+<h3>akuma on kwemu (wasm64)</h3>
+<pre id="out"></pre>
+<pre id="err"></pre>
+<script type="module">
+// ?elf=NAME  the guest program (default hello.elf)   ?arg=X  an argument (repeatable)
+// ?trace     trace syscalls and faults on stderr
+import { run } from "./host.mjs";
+const q = new URLSearchParams(location.search);
+const elfName = q.get("elf") ?? "hello.elf";
+const out = document.getElementById("out"), err = document.getElementById("err");
+const sink = (fd, text) => {
+  (fd === 2 ? err : out).textContent += text;
+};
+let status;
+try {
+  const [wasm, elf] = await Promise.all([
+    fetch("akuma.wasm").then((r) => r.arrayBuffer()),
+    fetch(elfName).then((r) => r.arrayBuffer()),
+  ]);
+  status = await run({ wasm, elf: new Uint8Array(elf), argv: [elfName, ...q.getAll("arg")], write: sink, trace: q.has("trace") });
+} catch (e) {
+  err.textContent += `host error: ${(e && e.stack) || e}\n`;
+  status = "host-error";
+}
+document.body.dataset.exit = String(status);
+document.body.dataset.done = "1";
+</script>
