@@ -39,7 +39,11 @@ build() {
 	cp "$out"/zig/guest/a64/*.elf "$site/"
 	# A guest of our own for the file system, built with zig's musl (static aarch64), and the archive it reads.
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/fstest.elf" "$here/guest/fstest.c"
-	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$site/rootfs.tar" -C "$here/rootfs" .
+	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/pipetest.elf" "$here/guest/pipetest.c"
+	# The root file system: poc/akuma/rootfs plus the programs built here (/bin/echoargs).
+	rm -rf "$out/rootfs-stage" && cp -r "$here/rootfs" "$out/rootfs-stage"
+	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$out/rootfs-stage/bin/echoargs" "$here/guest/echoargs.c"
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$site/rootfs.tar" -C "$out/rootfs-stage" .
 	# Akuma's own userspace (static aarch64-unknown-none ELFs on libakuma), when the checkout has built them.
 	local u="$akuma/userspace/target/aarch64-unknown-none/release"
 	for p in hello echo2; do [ -f "$u/$p" ] && cp "$u/$p" "$site/akuma-$p"; done
@@ -60,6 +64,7 @@ cases=(
 	"simdfptest.elf 0 0\\ known-answer\\ failure"
 	"simdmovetest.elf 0 0\\ failure"
 	"fstest.elf 7 fstest\\ ok"
+	"pipetest.elf 7 pipetest\\ ok"
 )
 
 test_all() {
