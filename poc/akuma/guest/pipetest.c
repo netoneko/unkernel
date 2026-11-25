@@ -47,15 +47,15 @@ int main(void) {
     CHECK(waitpid(c, &st, 0) == c && WIFEXITED(st) && WEXITSTATUS(st) == 3);
     CHECK(shared == 1);
 
-    /* Backpressure: 20000 bytes through a 4096-byte pipe, so the writer blocks when full and the reader when empty. */
+    /* Backpressure: 200000 bytes through a 64 KiB pipe, so the writer blocks when full and the reader when empty. */
     int q[2];
     CHECK(pipe(q) == 0);
     c = fork();
     if (c == 0) {
         close(q[0]);
         char chunk[1000];
-        for (int i = 0; i < 20; i++) {
-            memset(chunk, 'a' + i, sizeof chunk);
+        for (int i = 0; i < 200; i++) {
+            memset(chunk, 'a' + i % 26, sizeof chunk);
             for (long off = 0; off < 1000;) {
                 ssize_t w = write(q[1], chunk + off, 1000 - off);
                 if (w <= 0) _exit(102);
@@ -65,12 +65,12 @@ int main(void) {
         _exit(5);
     }
     close(q[1]);
-    static char big[20000 + 8];
+    static char big[200000 + 8];
     n = drain(q[0], big, sizeof big);
     printf("backpressure: read %ld bytes\n", n);
-    CHECK(n == 20000);
+    CHECK(n == 200000);
     for (long i = 0; i < n; i++)
-        if (big[i] != 'a' + i / 1000) { CHECK(!"byte order"); break; }
+        if (big[i] != 'a' + (i / 1000) % 26) { CHECK(!"byte order"); break; }
     CHECK(waitpid(c, &st, 0) == c && WIFEXITED(st) && WEXITSTATUS(st) == 5);
 
     /* A child that never exits is killed. */
