@@ -2,29 +2,41 @@
 <!-- SPDX-License-Identifier: MIT -->
 <meta charset="utf-8">
 <title>akuma on kwemu</title>
-<style>body{font:14px monospace;background:#111;color:#ddd;margin:1em}pre{white-space:pre-wrap}#err{color:#e88}</style>
+<style>body{font:14px monospace;background:#111;color:#ddd;margin:1em}pre{white-space:pre-wrap}#err{color:#e88}a{color:#8cf;margin-right:1em}</style>
 <h3>akuma on kwemu (wasm64)</h3>
+<p id="links"></p>
 <pre id="out"></pre>
 <pre id="err"></pre>
 <script type="module">
-// ?elf=NAME  the guest program (default hello.elf)   ?arg=X  an argument (repeatable)
-// ?rootfs=NAME  a ustar archive served as the guest's read-only file system
-// ?trace     trace syscalls and faults on stderr
-import { run } from "./host.mjs";
+// With no query the page runs the newest test: nettest.elf on rootfs.tar with the fake network. Parameters:
+// ?elf=NAME  the guest program (default nettest.elf)   ?arg=X  an argument (repeatable)
+// ?rootfs=NAME  a ustar archive served as the guest's boot file system (default rootfs.tar; ?rootfs=none for none)
+// ?net=test (default)  a fake world: example.test, an HTTP server on 10.0.2.2:80   ?net=none  no network
+// ?net=ws://host:port/tcp  real TCP through a WebSocket proxy (poc/akuma/serve.py)
+// ?trace     trace syscalls and faults on the browser console
+import { run, wsNet } from "./host.mjs";
 const q = new URLSearchParams(location.search);
-const elfName = q.get("elf") ?? "hello.elf";
+const elfName = q.get("elf") ?? "nettest.elf";
+const rootfsName = q.get("rootfs") ?? "rootfs.tar";
+const netSpec = q.get("net") ?? "test";
+const guests = ["nettest.elf", "pipetest.elf", "fstest.elf", "hello.elf", "inttest.elf", "cryptotest.elf", "atomictest.elf", "fptest.elf", "simdtest.elf"];
+document.getElementById("links").innerHTML = guests.map((g) => `<a href="?elf=${g}">${g}</a>`).join("") + '<a href="?trace">+trace</a>';
 const out = document.getElementById("out"), err = document.getElementById("err");
 const sink = (fd, text) => {
   (fd === 2 ? err : out).textContent += text;
+  if (q.has("trace")) console.log(text.trimEnd());
 };
 let status;
 try {
   const [wasm, elf, rootfs] = await Promise.all([
     fetch("akuma.wasm").then((r) => r.arrayBuffer()),
     fetch(elfName).then((r) => r.arrayBuffer()),
-    q.has("rootfs") ? fetch(q.get("rootfs")).then((r) => r.arrayBuffer()) : null,
+    rootfsName !== "none" ? fetch(rootfsName).then((r) => r.arrayBuffer()) : null,
   ]);
-  status = await run({ wasm, elf: new Uint8Array(elf), rootfs: rootfs && new Uint8Array(rootfs), argv: [elfName, ...q.getAll("arg")], write: sink, trace: q.has("trace") });
+  let net = null;
+  if (netSpec === "test") net = (await import("./testnet.mjs")).testNet();
+  else if (netSpec !== "none") net = wsNet({ proxy: netSpec });
+  status = await run({ net, wasm, elf: new Uint8Array(elf), rootfs: rootfs && new Uint8Array(rootfs), argv: [elfName, ...q.getAll("arg")], write: sink, trace: q.has("trace") });
 } catch (e) {
   err.textContent += `host error: ${(e && e.stack) || e}\n`;
   status = "host-error";

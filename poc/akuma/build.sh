@@ -35,12 +35,13 @@ build() {
 	local site="$out/site"
 	rm -rf "$site"
 	mkdir -p "$site"
-	cp "$here/index.html" "$here/host.mjs" "$site/"
+	cp "$here/index.html" "$here/host.mjs" "$here/testnet.mjs" "$site/"
 	cp "$out/cargo/wasm64-unknown-unknown/release/akuma_kernel_wasm.wasm" "$site/akuma.wasm"
 	cp "$out"/zig/guest/a64/*.elf "$site/"
 	# A guest of our own for the file system, built with zig's musl (static aarch64), and the archive it reads.
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/fstest.elf" "$here/guest/fstest.c"
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/pipetest.elf" "$here/guest/pipetest.c"
+	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/nettest.elf" "$here/guest/nettest.c"
 	# The root file system: poc/akuma/rootfs plus the programs built here (/bin/echoargs).
 	rm -rf "$out/rootfs-stage" && cp -r "$here/rootfs" "$out/rootfs-stage"
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$out/rootfs-stage/bin/echoargs" "$here/guest/echoargs.c"
@@ -66,6 +67,7 @@ cases=(
 	"simdmovetest.elf 0 0\\ failure"
 	"fstest.elf 7 fstest\\ ok"
 	"pipetest.elf 7 pipetest\\ ok"
+	"nettest.elf 7 nettest\\ ok"
 )
 
 test_all() {
@@ -77,7 +79,8 @@ test_all() {
 		[ -f "$out/site/$name" ] || { echo "skip $name (not built)"; continue; }
 		log="$(mktemp)"
 		args=()
-		for a in "$@"; do args+=(--arg "$a"); done
+		for a in "$@"; do args+=("--arg=$a"); done
+		[ "$name" = nettest.elf ] && args+=(--net test)
 		set +e
 		"$here/run-chrome.py" "$out/site" --rootfs rootfs.tar --elf "$name" "${args[@]}" >"$log" 2>"$log.err"
 		got=$?

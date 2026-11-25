@@ -20,12 +20,13 @@ ap.add_argument("site")
 ap.add_argument("--elf", default="hello.elf")
 ap.add_argument("--arg", action="append", default=[])
 ap.add_argument("--rootfs", help="ustar archive in SITE_DIR for the guest's file system")
+ap.add_argument("--net", help="network for the guest: test (a fake world) or a ws:// proxy URL")
 ap.add_argument("--trace", action="store_true")
 ap.add_argument("--timeout", type=int, default=120)
 ap.add_argument("--chrome", default=shutil.which("google-chrome") or shutil.which("chromium") or "google-chrome")
 o = ap.parse_args()
 
-q = urllib.parse.urlencode([("elf", o.elf)] + [("arg", a) for a in o.arg] + ([("rootfs", o.rootfs)] if o.rootfs else []) + ([("trace", "1")] if o.trace else []))
+q = urllib.parse.urlencode([("elf", o.elf)] + [("arg", a) for a in o.arg] + ([("rootfs", o.rootfs)] if o.rootfs else []) + ([("net", o.net)] if o.net else []) + ([("trace", "1")] if o.trace else []))
 url = f"file://{os.path.abspath(o.site)}/index.html?{q}"
 prof = tempfile.mkdtemp(prefix="akuma-chrome-")
 p = subprocess.Popen([o.chrome, "--headless=new", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files",

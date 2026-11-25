@@ -38,7 +38,7 @@ int main(void) {
     d = opendir("/etc");
     n = 0;
     for (struct dirent *e; d && (e = readdir(d)); n++) {}
-    CHECK(n == 4); // ., .., motd, os-release
+    CHECK(n == 5); // ., ., motd, os-release, resolv.conf
     if (d) closedir(d);
 
     int fd = open("/data/big.bin", O_RDONLY);
