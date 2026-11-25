@@ -37,6 +37,9 @@ build() {
 	cp "$here/index.html" "$here/host.mjs" "$site/"
 	cp "$out/cargo/wasm64-unknown-unknown/release/akuma_kernel_wasm.wasm" "$site/akuma.wasm"
 	cp "$out"/zig/guest/a64/*.elf "$site/"
+	# A guest of our own for the file system, built with zig's musl (static aarch64), and the archive it reads.
+	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/fstest.elf" "$here/guest/fstest.c"
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$site/rootfs.tar" -C "$here/rootfs" .
 	# Akuma's own userspace (static aarch64-unknown-none ELFs on libakuma), when the checkout has built them.
 	local u="$akuma/userspace/target/aarch64-unknown-none/release"
 	for p in hello echo2; do [ -f "$u/$p" ] && cp "$u/$p" "$site/akuma-$p"; done
@@ -56,6 +59,7 @@ cases=(
 	"simdtest.elf 0 words"
 	"simdfptest.elf 0 0\\ known-answer\\ failure"
 	"simdmovetest.elf 0 0\\ failure"
+	"fstest.elf 7 fstest\\ ok"
 )
 
 test_all() {
@@ -69,7 +73,7 @@ test_all() {
 		args=()
 		for a in "$@"; do args+=(--arg "$a"); done
 		set +e
-		"$here/run-chrome.py" "$out/site" --elf "$name" "${args[@]}" >"$log" 2>"$log.err"
+		"$here/run-chrome.py" "$out/site" --rootfs rootfs.tar --elf "$name" "${args[@]}" >"$log" 2>"$log.err"
 		got=$?
 		set -e
 		if [ "$got" = "$want" ] && grep -aqF -- "$sub" "$log"; then
@@ -87,6 +91,6 @@ test_all() {
 case "${1:-build}" in
 build) build ;;
 test) build && test_all ;;
-run) shift; build && "$here/run-chrome.py" "$out/site" --elf "$1" $(for a in "${@:2}"; do printf -- '--arg\n%s\n' "$a"; done) ;;
+run) shift; build && "$here/run-chrome.py" "$out/site" --rootfs rootfs.tar --elf "$1" $(for a in "${@:2}"; do printf -- '--arg\n%s\n' "$a"; done) ;;
 *) sed -n 4,12p "$0" >&2; exit 2 ;;
 esac

@@ -8,6 +8,7 @@
 <pre id="err"></pre>
 <script type="module">
 // ?elf=NAME  the guest program (default hello.elf)   ?arg=X  an argument (repeatable)
+// ?rootfs=NAME  a ustar archive served as the guest's read-only file system
 // ?trace     trace syscalls and faults on stderr
 import { run } from "./host.mjs";
 const q = new URLSearchParams(location.search);
@@ -18,11 +19,12 @@ const sink = (fd, text) => {
 };
 let status;
 try {
-  const [wasm, elf] = await Promise.all([
+  const [wasm, elf, rootfs] = await Promise.all([
     fetch("akuma.wasm").then((r) => r.arrayBuffer()),
     fetch(elfName).then((r) => r.arrayBuffer()),
+    q.has("rootfs") ? fetch(q.get("rootfs")).then((r) => r.arrayBuffer()) : null,
   ]);
-  status = await run({ wasm, elf: new Uint8Array(elf), argv: [elfName, ...q.getAll("arg")], write: sink, trace: q.has("trace") });
+  status = await run({ wasm, elf: new Uint8Array(elf), rootfs: rootfs && new Uint8Array(rootfs), argv: [elfName, ...q.getAll("arg")], write: sink, trace: q.has("trace") });
 } catch (e) {
   err.textContent += `host error: ${(e && e.stack) || e}\n`;
   status = "host-error";

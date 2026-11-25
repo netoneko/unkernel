@@ -7,17 +7,17 @@
 //
 // Contract with the module (crates/akuma-kernel-wasm in the akuma repo):
 //   imports  env.host_write(fd: i32, ptr: i64, len: i64)   env.host_now_ns() -> f64
-//   exports  memory, akuma_trace(flags), akuma_image_buf(len) -> ptr, akuma_args_buf(len) -> ptr, akuma_run(image_len, args_len, argc) -> i32
+//   exports  memory, akuma_trace(flags), akuma_rootfs_buf(len) -> ptr (optional ustar archive), akuma_image_buf(len) -> ptr, akuma_args_buf(len) -> ptr, akuma_run(image_len, args_len, argc) -> i32
 // Pointers and sizes are i64 (wasm64), so they cross the JS boundary as BigInt.
 
 const enc = new TextEncoder();
 
 /**
  * @param {{ wasm: BufferSource, elf: Uint8Array, argv: string[], envp?: string[],
- *           write: (fd: number, text: string) => void, trace?: boolean }} o
+ *           write: (fd: number, text: string) => void, trace?: boolean, rootfs?: Uint8Array | null }} o
  * @returns {number} the program's exit status (128 + signal on a fatal trap, negative on a boot failure)
  */
-export async function run({ wasm, elf, argv, envp = ["HOME=/", "PATH=/bin", "TERM=dumb"], write, trace = false }) {
+export async function run({ wasm, elf, argv, envp = ["HOME=/", "PATH=/bin", "TERM=dumb"], write, trace = false, rootfs = null }) {
   const dec = [null, new TextDecoder("utf-8"), new TextDecoder("utf-8")];
   let mem;
   const { instance } = await WebAssembly.instantiate(wasm, {
@@ -42,6 +42,12 @@ export async function run({ wasm, elf, argv, envp = ["HOME=/", "PATH=/bin", "TER
   for (const s of strings) {
     new Uint8Array(mem.buffer, at, s.length).set(s);
     at += s.length;
+  }
+  if (rootfs) {
+    // A read-only ustar archive: the guest's file system.
+    const p = x.akuma_rootfs_buf(BigInt(rootfs.length));
+    if (!p) throw new Error("root file system does not fit");
+    new Uint8Array(mem.buffer, Number(p), rootfs.length).set(rootfs);
   }
   x.akuma_trace(trace ? 1 : 0);
   return x.akuma_run(BigInt(elf.length), BigInt(argsLen), BigInt(argv.length));
