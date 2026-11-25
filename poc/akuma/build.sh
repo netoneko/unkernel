@@ -83,6 +83,10 @@ build() {
 	"$zig" cc -target aarch64-linux-musl -O2 -shared -fPIC -Wl,-soname,libbar.so -o "$out/rootfs-stage/lib/libbar.so" "$here/guest/libbar.c"
 	"$zig" cc -target aarch64-linux-musl -O2 -o "$site/dyntest.elf" "$here/guest/dyntest.c" -L"$out/rootfs-stage/lib" -lfoo
 	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$site/rootfs.tar" -C "$out/rootfs-stage" .
+	# The same plus what `apk add curl` installs, unpacked ahead of time (rootfs-curl.tar): a run need not install it.
+	rm -rf "$out/rootfs-curl" && cp -a "$out/rootfs-stage" "$out/rootfs-curl"
+	"$here/fetch-pkgs.py" "$out/rootfs-curl" ca-certificates-bundle brotli-libs c-ares libcrypto3 libunistring libidn2 nghttp2-libs libpsl libssl3 zlib zstd-libs libcurl curl >/dev/null
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$site/rootfs-curl.tar" -C "$out/rootfs-curl" .
 	# Akuma's own userspace (static aarch64-unknown-none ELFs on libakuma), when the checkout has built them.
 	local u="$akuma/userspace/target/aarch64-unknown-none/release"
 	for p in hello echo2; do [ -f "$u/$p" ] && cp "$u/$p" "$site/akuma-$p"; done

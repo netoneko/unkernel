@@ -23,7 +23,7 @@ const enc = new TextEncoder();
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 export const EV_CONNECTED = 1, EV_ERROR = 2, EV_EOF = 3;
-export const ECONNREFUSED = 111, ENETUNREACH = 101, ETIMEDOUT = 110;
+export const ECONNREFUSED = 111, ENETUNREACH = 101, ETIMEDOUT = 110, ECONNRESET = 104;
 
 /**
  * @param {{ wasm: BufferSource, elf: Uint8Array, argv: string[], envp?: string[],
@@ -46,7 +46,9 @@ export async function run({ wasm, elf, argv, envp = ["HOME=/", "PATH=/bin:/sbin:
   };
   const hostApi = {
     event(id, kind, arg = 0) {
-      if (kind === EV_EOF) pending(id).eof = true; // delivered after the data already queued
+      // End of file and errors come after the data already queued, never before it.
+      if (kind === EV_EOF) pending(id).eof = true;
+      else if (kind === EV_ERROR && queues.get(id)?.chunks.length) pending(id).err = arg;
       else x.akuma_net_event(id, kind, arg);
       kick();
     },
@@ -76,13 +78,18 @@ export async function run({ wasm, elf, argv, envp = ["HOME=/", "PATH=/bin:/sbin:
         if (n < chunk.length) q.chunks[0] = chunk.subarray(n);
         else q.chunks.shift();
       }
+      if (q.err !== undefined && !q.chunks.length) {
+        const e = q.err;
+        q.err = undefined;
+        x.akuma_net_event(id, EV_ERROR, e);
+      }
       if (q.eof && !q.chunks.length) {
         q.eof = false;
         x.akuma_net_event(id, EV_EOF, 0);
       }
     }
   };
-  const busy = () => [...queues.values()].some((q) => q.chunks.length);
+  const busy = () => [...queues.values()].some((q) => q.chunks.length || q.err !== undefined || q.eof);
 
   const noNet = () => { throw new Error("the guest used the network but the page has none"); };
   const { instance } = await WebAssembly.instantiate(wasm, {

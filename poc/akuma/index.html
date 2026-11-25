@@ -10,6 +10,7 @@
 <script type="module">
 // With no query the page runs the newest test: nettest.elf on rootfs.tar with the fake network. Parameters:
 // ?sh=CMDS  run shell commands (busybox sh -c) on the root file system: ?sh=ls /bin; apk --version; wget -O- http://example.com
+//           (a command that mentions curl gets rootfs-curl.tar, which has curl installed: ?net=ws&sh=curl -sI https://example.com)
 // ?elf=NAME  the guest program (default nettest.elf)   ?arg=X  an argument (repeatable)
 // ?rootfs=NAME  a ustar archive served as the guest's boot file system (default rootfs.tar; ?rootfs=none for none)
 // ?net=test (default)  a fake world: example.test, an HTTP server on 10.0.2.2:80   ?net=none  no network
@@ -20,7 +21,7 @@ const q = new URLSearchParams(location.search);
 // ?sh=COMMANDS runs them with busybox sh -c (apk, wget and the rootfs tools are in /bin)
 const elfName = q.has("sh") ? "busybox.elf" : q.get("elf") ?? "nettest.elf";
 const args = q.has("sh") ? ["sh", "-c", q.get("sh")] : q.getAll("arg");
-const rootfsName = q.get("rootfs") ?? "rootfs.tar";
+const rootfsName = q.get("rootfs") ?? (q.get("sh")?.includes("curl") ? "rootfs-curl.tar" : "rootfs.tar"); // curl and its libraries are in rootfs-curl.tar
 const netArg = q.get("net") ?? "test";
 const netSpec = netArg === "ws" ? `ws://${location.host}/tcp` : netArg; // ?net=ws: serve.py's relay on this origin
 const guests = ["nettest.elf", "httpget.elf", "pipetest.elf", "fstest.elf", "hello.elf", "inttest.elf", "cryptotest.elf", "atomictest.elf", "fptest.elf", "simdtest.elf"];
