@@ -42,6 +42,7 @@ build() {
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/fstest.elf" "$here/guest/fstest.c"
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/pipetest.elf" "$here/guest/pipetest.c"
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/nettest.elf" "$here/guest/nettest.c"
+	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$site/httpget.elf" "$here/guest/httpget.c"
 	# The root file system: poc/akuma/rootfs plus the programs built here (/bin/echoargs).
 	rm -rf "$out/rootfs-stage" && cp -r "$here/rootfs" "$out/rootfs-stage"
 	"$zig" cc -target aarch64-linux-musl -O2 -static -o "$out/rootfs-stage/bin/echoargs" "$here/guest/echoargs.c"

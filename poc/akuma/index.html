@@ -12,14 +12,15 @@
 // ?elf=NAME  the guest program (default nettest.elf)   ?arg=X  an argument (repeatable)
 // ?rootfs=NAME  a ustar archive served as the guest's boot file system (default rootfs.tar; ?rootfs=none for none)
 // ?net=test (default)  a fake world: example.test, an HTTP server on 10.0.2.2:80   ?net=none  no network
-// ?net=ws://host:port/tcp  real TCP through a WebSocket proxy (poc/akuma/serve.py)
+// ?net=ws  real TCP through serve.py's relay on this origin (or ?net=ws://host:port/tcp for another one)
 // ?trace     trace syscalls and faults on the browser console
 import { run, wsNet } from "./host.mjs";
 const q = new URLSearchParams(location.search);
 const elfName = q.get("elf") ?? "nettest.elf";
 const rootfsName = q.get("rootfs") ?? "rootfs.tar";
-const netSpec = q.get("net") ?? "test";
-const guests = ["nettest.elf", "pipetest.elf", "fstest.elf", "hello.elf", "inttest.elf", "cryptotest.elf", "atomictest.elf", "fptest.elf", "simdtest.elf"];
+const netArg = q.get("net") ?? "test";
+const netSpec = netArg === "ws" ? `ws://${location.host}/tcp` : netArg; // ?net=ws: serve.py's relay on this origin
+const guests = ["nettest.elf", "httpget.elf", "pipetest.elf", "fstest.elf", "hello.elf", "inttest.elf", "cryptotest.elf", "atomictest.elf", "fptest.elf", "simdtest.elf"];
 document.getElementById("links").innerHTML = guests.map((g) => `<a href="?elf=${g}">${g}</a>`).join("") + '<a href="?trace">+trace</a>';
 const out = document.getElementById("out"), err = document.getElementById("err");
 const sink = (fd, text) => {

@@ -164,8 +164,9 @@ export async function run({ wasm, elf, argv, envp = ["HOME=/", "PATH=/bin:/sbin:
 // ---- backends ----
 
 /** TCP through a WebSocket-to-TCP proxy (poc/akuma/serve.py): one WebSocket per connection, `?host=IP&port=N`.
- *  UDP (the guest's DNS lookups) goes to a DNS-over-HTTPS resolver as a wire-format query (RFC 8484). */
-export function wsNet({ proxy, doh = "https://dns.google/dns-query" }) {
+ *  UDP (the guest's DNS lookups) goes to `doh`: serve.py's /dns, which forwards the wire-format query to the machine's resolver
+ *  (a DNS-over-HTTPS URL such as https://dns.google/dns-query also works if the server allows CORS). */
+export function wsNet({ proxy, doh = proxy.replace(/^ws/, "http").replace(/\/tcp$/, "/dns") }) {
   let host;
   const socks = new Map();
   const dotted = (ip) => `${ip >>> 24}.${(ip >>> 16) & 255}.${(ip >>> 8) & 255}.${ip & 255}`;
@@ -191,8 +192,11 @@ export function wsNet({ proxy, doh = "https://dns.google/dns-query" }) {
       if (port !== 53) return;
       try {
         const r = await fetch(doh, { method: "POST", headers: { "content-type": "application/dns-message", accept: "application/dns-message" }, body: bytes });
+        if (!r.ok) throw new Error(`${doh}: HTTP ${r.status}`);
         host.datagram(id, ip, port, new Uint8Array(await r.arrayBuffer()));
-      } catch {}
+      } catch (e) {
+        console.warn("[akuma] DNS lookup failed:", e);
+      }
     },
   };
 }
