@@ -8,6 +8,7 @@
 #   poc/akuma/build.sh [--akuma DIR] build      kwemu + guests (zig), the Akuma wasm module (cargo), the site
 #   poc/akuma/build.sh [--akuma DIR] test       build, then run the guests in headless Chrome and check them
 #   poc/akuma/build.sh [--akuma DIR] run ELF [ARG...]   build, then run one guest (a name in the site dir)
+#   poc/akuma/build.sh [--akuma DIR] apk-demo   Alpine's static apk installs a local package (fetches two files once)
 #
 # Environment: ZIG (Zig 0.16; else vendor/toolchain/zig-dl/*/zig, else PATH), OUT (default vendor/build/akuma-poc),
 # CHROME. AKUMA is the Akuma checkout (default ../akuma), on a branch with crates/akuma-kernel-wasm.
@@ -93,9 +94,46 @@ test_all() {
 	return $fail
 }
 
+# Alpine's own static apk, installing a package from a local file into a scratch root on the kernel (needs network
+# once, to fetch apk-tools-static and one small package from dl-cdn.alpinelinux.org; cached under $out/dl).
+apk_demo() {
+	build
+	local dl="$out/dl" base=https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/aarch64
+	mkdir -p "$dl"
+	if [ ! -f "$dl/apk.static" ] || [ ! -f "$dl/ca.apk" ]; then
+		local index apkpkg capkg
+		index=$(curl -sSfL "$base/")
+		apkpkg=$(grep -o 'apk-tools-static-[^"]*\.apk' <<<"$index" | head -1)
+		capkg=$(grep -o 'ca-certificates-bundle-[0-9][^"]*\.apk' <<<"$index" | head -1)
+		curl -sSfL -o "$dl/apk-tools-static.apk" "$base/$apkpkg"
+		curl -sSfL -o "$dl/ca.apk" "$base/$capkg"
+		tar xzf "$dl/apk-tools-static.apk" -C "$dl" sbin/apk.static 2>/dev/null
+		mv "$dl/sbin/apk.static" "$dl/apk.static"
+	fi
+	rm -rf "$out/apk-stage"
+	cp -r "$out/rootfs-stage" "$out/apk-stage"
+	mkdir -p "$out/apk-stage/sbin" "$out/apk-stage/pkg" "$out/apk-stage/tmp"
+	cp "$dl/apk.static" "$out/apk-stage/sbin/apk"
+	cp "$dl/ca.apk" "$out/apk-stage/pkg/ca.apk"
+	tar --format=ustar --owner=0 --group=0 --numeric-owner -cf "$out/site/apk.tar" -C "$out/apk-stage" .
+	cp "$dl/apk.static" "$out/site/apk.static"
+	"$here/run-chrome.py" "$out/site" --rootfs apk.tar --elf apk.static \
+		--arg=--root --arg=/tmp/r --arg=--initdb --arg=--allow-untrusted --arg=--no-network --arg=--no-scripts \
+		--arg=--force-non-repository --arg=add --arg=/pkg/ca.apk
+}
+
 case "${1:-build}" in
 build) build ;;
 test) build && test_all ;;
-run) shift; build && "$here/run-chrome.py" "$out/site" --rootfs rootfs.tar --elf "$1" $(for a in "${@:2}"; do printf -- '--arg\n%s\n' "$a"; done) ;;
+apk-demo) apk_demo ;;
+run)
+	shift
+	build
+	elf=$1
+	shift
+	args=()
+	for a in "$@"; do args+=("--arg=$a"); done
+	"$here/run-chrome.py" "$out/site" --rootfs rootfs.tar --elf "$elf" "${args[@]}"
+	;;
 *) sed -n 4,12p "$0" >&2; exit 2 ;;
 esac
